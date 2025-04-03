@@ -1,0 +1,173 @@
+-- Data cleaning
+
+
+SELECT *
+FROM layoffs;
+
+-- 1. Remove duplicates
+-- 2. Standardize data
+-- 3. Null/Blank values
+-- 4. Remove any columns if necessary
+
+
+-- 1. Removing duplicates
+
+-- Inserting table: layoffs_staging
+CREATE TABLE layoffs_staging
+LIKE layoffs;
+
+INSERT layoffs_staging
+SELECT *
+FROM layoffs_staging;
+
+-- Identifying duplicates
+SELECT *,
+ROW_NUMBER() OVER(
+    PARTITION BY company, industry, total_laid_off, percentage_laid_off, 'date') AS row_num
+FROM layoffs_staging;
+
+WITH duplicate_cte AS
+(
+    SELECT *,
+ROW_NUMBER() OVER(
+    PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions ) AS row_num
+FROM layoffs_staging
+)
+SELECT *
+FROM duplicate_cte
+WHERE row_num > 1;
+
+SELECT *
+FROM layoffs_staging
+WHERE company = 'Yahoo';
+
+-- Inserting row: row_num which identifies dupes
+CREATE TABLE layoffs_staging2
+LIKE layoffs_staging
+
+ALTER TABLE layoffs_staging2
+ADD row_num INT;
+
+SELECT *
+FROM layoffs_staging2
+WHERE row_num > 1;
+
+INSERT INTO layoffs_staging2
+SELECT *,
+ROW_NUMBER() OVER(
+    PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions) AS row_num
+FROM layoffs_staging;
+
+--Deleting dupes
+DELETE
+FROM layoffs_staging2
+WHERE row_num > 1;
+
+SELECT *
+FROM layoffs_staging2;
+
+
+-- 2.Standardizing data
+
+-- trimming the company column
+SELECT company
+FROM layoffs_staging2;
+
+SELECT company, TRIM(company)
+FROM layoffs_staging2;
+
+UPDATE layoffs_staging2
+SET company = TRIM(company);
+
+-- Standardizing the industry column
+-- Crypto/Crypto Currency/CryptoCurrency problem
+SELECT DISTINCT industry
+FROM layoffs_staging2
+ORDER BY 1;
+
+SELECT *
+FROM layoffs_staging2
+WHERE industry LIKE 'Crypto%';
+
+UPDATE layoffs_staging2
+SET industry = 'Crypto'
+WHERE industry LIKE 'Crypto%';
+
+-- Looking at location column
+SELECT DISTINCT location
+FROM layoffs_staging2
+ORDER BY 1;
+
+-- Standardizing the country column (United States/United States.)
+SELECT DISTINCT country
+FROM layoffs_staging2
+ORDER BY 1;
+
+SELECT *
+FROM layoffs_staging2
+WHERE country LIKE 'United States%'
+ORDER BY 1;
+
+UPDATE layoffs_staging2
+SET country = TRIM(TRAILING '.' FROM country)
+WHERE country LIKE 'United States%';
+
+-- Changing the data type of date from text to date
+SELECT date,
+STR_TO_DATE(date,'%m/%d/%Y')
+FROM layoffs_staging2;
+
+UPDATE layoffs_staging2
+SET date = STR_TO_DATE(date,'%m/%d/%Y');
+
+SELECT date
+FROM layoffs_staging2;
+
+ALTER TABLE layoffs_staging2
+MODIFY COLUMN date DATE;
+
+
+-- 3. Null/Blank values
+
+-- Null values in the indsutry column
+-- Idea is each individual company should only be in 1 type of industry
+
+SELECT *
+FROM layoffs_staging2
+WHERE industry IS NULL
+OR industry = '';
+
+UPDATE layoffs_staging2
+SET industry = NULL
+WHERE industry = '';
+
+SELECT *
+FROM layoffs_staging2
+WHERE company = "Airbnb";
+
+SELECT *
+FROM layoffs_staging2 t1
+JOIN layoffs_staging2 t2
+    ON t1.company = t2.company
+    AND t1.location = t2.location
+WHERE t1.industry IS NULL OR t1.industry = ''
+AND t2.industry IS NOT NULL;
+
+UPDATE layoffs_staging2 t1
+JOIN layoffs_staging2 t2
+    ON t1.company = t2.company
+SET t1.industry = t2.industry
+WHERE t1.industry IS NULL
+AND t2.industry IS NOT NULL;
+
+-- For rows where total_laid_off and percentage_laid_off are null values, no point keeping them so delete those columns
+
+SELECT *
+FROM layoffs_staging2
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
+
+DELETE
+FROM layoffs_staging2
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
